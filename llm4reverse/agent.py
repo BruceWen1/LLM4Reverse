@@ -60,4 +60,4 @@ class ReverseAgent:
             {"role": "system", "content": _SYSTEM_PROMPT},
             {"role": "user", "content": f"Evidence JSON:\n{evidence}"},
         ]
-        return self.client.chat(messages, temperature=0.2, max_tokens=1200)
+        return self.client.chat(messages, temperature=0.2, max_tokens=12800)
