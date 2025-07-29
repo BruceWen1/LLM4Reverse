@@ -378,4 +378,9 @@ MIT License © 2025 [@BruceWen1](https://github.com/BruceWen1)
 
 ## 🤝 Contributing
 
+<<<<<<< HEAD
 Pull requests and issues are welcome. Please follow Google‑style docstrings, keep README sections in sync, and respect the ethical disclaimer.
+=======
+Pull requests and issues are welcome.
+ Please follow Google‑style docstrings, keep README sections in sync, and respect the ethical disclaimer.
+>>>>>>> e8397bf05ca9eef200eeb6bc175d2ae00904a7a3
