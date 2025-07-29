@@ -1,0 +1,16 @@
+# venv
+.venv/
+venv/
+env/
+
+# python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# env
+.env
+
+# playwright
+playwright/.cache/

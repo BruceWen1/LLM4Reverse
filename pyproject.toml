@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "llm4reverse"
+version = "0.1.0"
+description = "Front-end reverse engineering tooling with LLM-assisted reasoning (expert-friendly)."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT License" }
+authors = [{ name = "BruceWen1" }]
+keywords = ["reverse engineering", "LLM", "Playwright", "security"]
+
+dependencies = [
+  "python-dotenv>=1.0.1",
+  "openai>=1.35.0",
+  "jsbeautifier>=1.15.1",
+  "beautifulsoup4>=4.12.2",
+  "playwright>=1.45.0"
+]
+
+[project.scripts]
+llm4reverse = "llm4reverse.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+exclude = ["tests*", "docs*"]
