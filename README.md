@@ -1,6 +1,7 @@
 <p align="right">
   English | <a href="README_zh.md">中文</a>
 </p>
+
 # 🔍 LLM4Reverse
 
 **LLM4Reverse** is an expert‑oriented toolkit that automates **front‑end reverse engineering** with the help of Modern LLMs and lightweight agents.
@@ -377,5 +378,4 @@ MIT License © 2025 [@BruceWen1](https://github.com/BruceWen1)
 
 ## 🤝 Contributing
 
-Pull requests and issues are welcome.
- Please follow Google‑style docstrings, keep README sections in sync, and respect the ethical disclaimer.
+Pull requests and issues are welcome. Please follow Google‑style docstrings, keep README sections in sync, and respect the ethical disclaimer.
