@@ -14,3 +14,7 @@ __pycache__/
 
 # playwright
 playwright/.cache/
+
+artifacts/
+llm4reverse.egg-info/
+
