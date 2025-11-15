@@ -478,7 +478,7 @@ llm4reverse reverse --url https://example.com
 llm4reverse audit \
   --path ./src \
   --include .js,.ts \
-  --exclude node_modules,dist,tests
+  --exclude node_modules,dist
 
 # 使用可见浏览器和更长超时的动态逆向
 llm4reverse reverse \
@@ -564,7 +564,7 @@ llm4reverse audit --path ./src
 llm4reverse audit --path ./src --include .js,.ts
 
 # 自定义排除项
-llm4reverse audit --path ./src --exclude node_modules,dist,tests,.git
+llm4reverse audit --path ./src --exclude node_modules,dist,.git
 ```
 
 ### 退出代码
@@ -822,15 +822,6 @@ with BrowserSession(har_path="traffic.har", headless=True) as page:
 2. 使用 `langchain_core.tools.Tool` 包装函数
 3. 在代理初始化时将工具添加到工具列表
 4. 更新代理提示以描述新工具
-
-### 测试
-
-运行测试套件：
-
-```bash
-# 使用 pytest 或您首选的测试框架运行测试
-pytest
-```
 
 ### 代码风格
 

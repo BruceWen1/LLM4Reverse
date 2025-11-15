@@ -479,7 +479,7 @@ This will:
 llm4reverse audit \
   --path ./src \
   --include .js,.ts \
-  --exclude node_modules,dist,tests
+  --exclude node_modules,dist
 
 # Dynamic reverse with visible browser and longer timeout
 llm4reverse reverse \
@@ -565,7 +565,7 @@ llm4reverse audit --path ./src
 llm4reverse audit --path ./src --include .js,.ts
 
 # Custom exclusions
-llm4reverse audit --path ./src --exclude node_modules,dist,tests,.git
+llm4reverse audit --path ./src --exclude node_modules,dist,.git
 ```
 
 ### Exit Codes
@@ -813,7 +813,7 @@ To add a new regex pattern for endpoint extraction:
 1. Edit `llm4reverse/audit/extractors/regex_extractor.py`
 2. Add pattern to `_HTTP_PATTERNS`, `_WS_PATTERNS`, or create new pattern list
 3. Update `extract_endpoints()` function to use new pattern
-4. Test with sample code
+4. Verify with sample code
 
 ### Adding New Agent Tools
 
@@ -823,15 +823,6 @@ To add a new tool for the LLM agent:
 2. Use `langchain_core.tools.Tool` to wrap the function
 3. Add tool to tools list in agent initialization
 4. Update agent prompt to describe the new tool
-
-### Testing
-
-Run the test suite:
-
-```bash
-# Run tests using pytest or your preferred testing framework
-pytest
-```
 
 ### Code Style
 
@@ -1024,16 +1015,14 @@ Contributions are welcome! Here's how you can help:
 1. **Fork the repository**
 2. **Create a feature branch**: `git checkout -b feature/your-feature-name`
 3. **Make your changes**: Follow the development guidelines
-4. **Test your changes**: Run tests and ensure they pass
-5. **Update documentation**: Keep README and docstrings in sync
-6. **Commit your changes**: Use clear, descriptive commit messages
-7. **Push to your fork**: `git push origin feature/your-feature-name`
-8. **Open a Pull Request**: Provide a clear description of changes
+4. **Update documentation**: Keep README and docstrings in sync
+5. **Commit your changes**: Use clear, descriptive commit messages
+6. **Push to your fork**: `git push origin feature/your-feature-name`
+7. **Open a Pull Request**: Provide a clear description of changes
 
 ### Contribution Guidelines
 
 - **Code style**: Follow PEP 8, use type hints, write docstrings
-- **Testing**: Add tests for new features
 - **Documentation**: Update README for user-facing changes
 - **Compatibility**: Maintain Python 3.10+ compatibility
 - **Ethics**: Ensure contributions align with ethical use guidelines
@@ -1084,7 +1073,6 @@ Future improvements planned:
 
 - [ ] Enhanced AST-based code analysis (beyond regex)
 - [ ] Interactive mode for reviewing findings
-- [ ] Integration with API testing tools
 - [ ] Support for GraphQL schema extraction
 - [ ] Web UI for report visualization
 - [ ] Batch processing for multiple targets
