@@ -1,155 +1,170 @@
 # -*- coding: utf-8 -*-
 """
-Command-line interface for LLM4Reverse.
+cli.py
+LLM4Reverse Command-Line Interface
+=====================
 
-This module defines a small CLI with two subcommands:
-- reverse: run the reverse workflow
-- playwright-install: install Playwright browsers
-
-Expert-friendly design notes:
-- Arguments map 1:1 to internal function parameters.
-- Fails gracefully when optional deps (Playwright/Node) are missing.
+This module defines the top-level CLI entrypoint. It dispatches to two subcommands:
+- reverse: dynamic web reverse-engineering
+- audit: static code audit
 """
 
-from __future__ import annotations
-
 import argparse
-import json
+import logging
 import sys
+import time
 from pathlib import Path
-from typing import Any, Dict, Optional
 
-from dotenv import load_dotenv
+# Allow running as a script: `python llm4reverse/cli.py ...`
+# When executed directly, Python's sys.path lacks the project root,
+# so importing `llm4reverse.*` would fail. Add the parent directory.
+if __package__ in (None, "") and str(Path(__file__).resolve().parents[1]) not in sys.path:
+    sys.path.append(str(Path(__file__).resolve().parents[1]))
 
-# Load .env if present
-load_dotenv()
+from importlib.metadata import PackageNotFoundError, version
 
-from .agent import ReverseAgent
-from .report import save_artifacts
-from .tools.browser import BrowserTool, PlaywrightNotAvailableError
-from .tools.js_ast import try_extract_ast
-from .tools.js_beautify import JSBeautifyTool
+try:
+    from llm4reverse import __version__
+except ImportError:
+    __version__ = None
+
+from llm4reverse.reverse.pipeline import run_dynamic_reverse
+from llm4reverse.audit.pipeline import run_static_audit
+
+logger = logging.getLogger(__name__)
 
 
-def _cmd_playwright_install(_: argparse.Namespace) -> int:
-    """Install Playwright browsers via Python entry-point.
-
-    Returns:
-        int: Exit code (0 for success).
+def configure_logging(verbose: bool) -> None:
     """
-    import subprocess
-    try:
-        subprocess.check_call([sys.executable, "-m", "playwright", "install"])
-        print("Playwright browsers installed.")
-        return 0
-    except subprocess.CalledProcessError as e:
-        print(f"Playwright install failed: {e}", file=sys.stderr)
-        return 1
-
-
-def _cmd_reverse(args: argparse.Namespace) -> int:
-    """Run the reverse workflow and save artifacts.
+    Configure root logger format and level.
 
     Args:
-        args: Parsed CLI arguments.
-
-    Returns:
-        int: Exit code.
+        verbose (bool): If True, set DEBUG level; otherwise INFO.
     """
-    outdir = Path(args.outdir).resolve()
-    outdir.mkdir(parents=True, exist_ok=True)
-
-    # 1) Capture (optional)
-    capture: Optional[Dict[str, Any]] = None
-    if not args.no_browser:
-        try:
-            browser = BrowserTool(headless=not args.show_browser, timeout_ms=20000)
-            capture = browser.capture(
-                url=args.url,
-                click_selector=args.click,
-                wait_after_ms=args.wait_ms,
-                include_dom=True,
-            )
-        except PlaywrightNotAvailableError as e:
-            print(f"[warn] Browser capture disabled: {e}")
-            capture = None
-
-    # 2) JS beautify + 3) optional AST
-    js_report: Optional[Dict[str, Any]] = None
-    ast_report: Optional[Dict[str, Any]] = None
-
-    if args.jsfile:
-        js_path = Path(args.jsfile)
-        if not js_path.exists():
-            print(f"[error] JS file not found: {js_path}")
-            return 2
-        code = js_path.read_text(encoding="utf-8", errors="ignore")
-
-        jsb = JSBeautifyTool()
-        js_report = jsb.run(code)
-
-        if args.ast:
-            ast_report = try_extract_ast(code)
-
-    # 4) LLM reasoning (optional)
-    reverse_md: Optional[str] = None
-    if not args.no_llm:
-        agent = ReverseAgent(model=args.model, base_url=args.base_url)
-        evidence = {
-            "targetURL": args.url,
-            "browserCapture": capture,
-            "jsBeautify": js_report,
-            "jsAST": ast_report,
-        }
-        reverse_md = agent.reason(evidence)
-
-    # 5) Save
-    save_artifacts(
-        outdir=outdir,
-        capture=capture,
-        js_report=js_report,
-        ast_report=ast_report,
-        reverse_md=reverse_md,
+    level = logging.DEBUG if verbose else logging.INFO
+    logging.basicConfig(
+        level=level,
+        format="%(asctime)s [%(name)s] %(levelname)s - %(message)s",
     )
-
-    if reverse_md:
-        print(f"[ok] Reverse report written: {outdir / 'reverse_report.md'}")
-    else:
-        print(f"[ok] Evidence saved (no LLM report). Output: {outdir}")
-    return 0
+    logger.debug("Logging configured, verbose=%s", verbose)
 
 
 def build_parser() -> argparse.ArgumentParser:
-    """Build and return the CLI parser."""
-    parser = argparse.ArgumentParser(
-        prog="llm4reverse",
-        description="Front-end reverse engineering with LLM-assisted tooling.",
+    """
+    Build the CLI parser with subcommands.
+
+    Returns:
+        argparse.ArgumentParser: Configured parser.
+    """
+    parser = argparse.ArgumentParser(prog="llm4reverse", description="LLM4Reverse CLI")
+    parser.add_argument("-v", "--verbose", action="store_true", help="Enable debug logging")
+    
+    # Prefer reading version from __init__.py, fallback to metadata if failed
+    pkg_version = __version__
+    if pkg_version is None:
+        try:
+            pkg_version = version("llm4reverse")
+        except PackageNotFoundError:
+            pkg_version = "0.0.0"
+    
+    parser.add_argument(
+        "--version",
+        action="version",
+        version=f"llm4reverse {pkg_version}",
     )
-    sub = parser.add_subparsers(dest="command", required=True)
 
-    p_rev = sub.add_parser("reverse", help="Run reverse workflow")
-    p_rev.add_argument("--url", required=True, help="Target URL")
-    p_rev.add_argument("--click", default=None, help="Optional CSS selector to click once")
-    p_rev.add_argument("--wait-ms", type=int, default=2500, help="Wait after load/click (ms)")
-    p_rev.add_argument("--jsfile", default=None, help="Optional local JS file")
-    p_rev.add_argument("--ast", action="store_true", help="Enable AST (requires Node + esprima)")
-    p_rev.add_argument("--no-browser", action="store_true", help="Disable headless capture")
-    p_rev.add_argument("--show-browser", action="store_true", help="Run non-headless for debugging")
-    p_rev.add_argument("--outdir", default="./artifacts", help="Output directory")
-    p_rev.add_argument("--model", default=None, help="Override model (default from env)")
-    p_rev.add_argument("--base-url", default=None, help="Override OpenAI-compatible base URL")
-    p_rev.add_argument("--no-llm", action="store_true", help="Skip LLM; save evidence only")
-    p_rev.set_defaults(func=_cmd_reverse)
+    subparsers = parser.add_subparsers(dest="cmd", required=True)
 
-    p_pw = sub.add_parser("playwright-install", help="Install Playwright browsers")
-    p_pw.set_defaults(func=_cmd_playwright_install)
+    # reverse subcommand
+    p_rev = subparsers.add_parser("reverse", help="Run dynamic web reverse workflow")
+    p_rev.add_argument("--url", required=True, help="Target page URL to reverse")
+    p_rev.add_argument("--output", "--outdir", default="./reverse_out", help="Output directory")
+    p_rev.add_argument("--no-headless", action="store_true", help="Run browser in UI mode")
+    p_rev.add_argument("--timeout", type=int, default=30, help="Extra wait after networkidle (seconds)")
+    p_rev.set_defaults(func=handle_reverse)
+
+    # audit subcommand
+    p_aud = subparsers.add_parser("audit", help="Run static JS/TS code audit")
+    p_aud.add_argument("--path", required=True, help="Path to local code directory")
+    p_aud.add_argument(
+        "--include",
+        default=".js,.ts,.jsx,.tsx",
+        help="Comma-separated glob patterns to include",
+    )
+    p_aud.add_argument(
+        "--exclude",
+        default="node_modules,dist,build,.git",
+        help="Comma-separated directory names to exclude",
+    )
+    p_aud.set_defaults(func=handle_audit)
 
     return parser
 
 
-def main() -> None:
-    """Entry point for console script."""
+def handle_reverse(args: argparse.Namespace) -> int:
+    """
+    Handle the 'reverse' subcommand.
+
+    Args:
+        args (argparse.Namespace): Parsed args with url, jsfile, model.
+
+    Returns:
+        int: Exit code.
+    """
+    configure_logging(args.verbose)
+    start = time.time()
+    try:
+        # Determine output directory (default to ./reverse_out)
+        out_dir = getattr(args, "output", "./reverse_out")
+        headless = not getattr(args, "no_headless", False)
+        timeout = getattr(args, "timeout", 30)
+        run_dynamic_reverse(url=args.url, out_dir=out_dir, headless=headless, timeout=timeout)
+        logger.info("Reverse workflow completed in %.2f seconds", time.time() - start)
+        return 0
+    except Exception:
+        logger.exception("Reverse workflow failed")
+        return 1
+
+
+def handle_audit(args: argparse.Namespace) -> int:
+    """
+    Handle the 'audit' subcommand.
+
+    Args:
+        args (argparse.Namespace): Parsed args with path, include, exclude.
+
+    Returns:
+        int: Exit code.
+    """
+    configure_logging(args.verbose)
+    start = time.time()
+    try:
+        run_static_audit(
+            path=args.path,
+            include=args.include.split(","),
+            exclude=args.exclude.split(","),
+        )
+        logger.info("Audit workflow completed in %.2f seconds", time.time() - start)
+        return 0
+    except Exception:
+        logger.exception("Audit workflow failed")
+        return 1
+
+
+def main() -> int:
+    """
+    Main entrypoint: parse args and dispatch.
+
+    This function is the main entry point of the CLI, responsible for parsing
+    command-line arguments and calling the corresponding handler functions.
+
+    Returns:
+        int: Exit code (0 for success, non-zero for failure).
+    """
     parser = build_parser()
     args = parser.parse_args()
-    rc = args.func(args)
-    raise SystemExit(rc)
+    return args.func(args)
+
+
+if __name__ == "__main__":
+    sys.exit(main())

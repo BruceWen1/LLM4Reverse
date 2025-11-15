@@ -1,8 +1,15 @@
 # -*- coding: utf-8 -*-
 """
-Top-level package for LLM4Reverse.
+__init__.py
+LLM4Reverse Package
+=====================
 
-This package exposes CLI and core modules for expert users.
+Top-level package for LLM4Reverse containing submodules:
+- cli: command-line interface
+- tools: utility functions
+- reverse: dynamic web reverse-engineering
+- audit: static code audit
+- llm: large-language-model integrations
 """
-__all__ = ["cli", "agent", "llm_client", "report", "tools"]
+
 __version__ = "0.1.0"

@@ -1,381 +1,1093 @@
+# 🔍 LLM4Reverse
+
 <p align="right">
   English | <a href="README_zh.md">中文</a>
 </p>
 
-# 🔍 LLM4Reverse
-
-**LLM4Reverse** is an expert‑oriented toolkit that automates **front‑end reverse engineering** with the help of Modern LLMs and lightweight agents.
+**LLM4Reverse** is a professional-grade reverse engineering toolkit that combines static code analysis and dynamic network traffic analysis with Large Language Model (LLM) reasoning to automatically discover and document API endpoints from frontend JavaScript/TypeScript codebases.
 
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
- ![Python](https://img.shields.io/badge/python-3.10%2B-blue)
- ![Status](https://img.shields.io/badge/status-alpha-orange)
+![Python](https://img.shields.io/badge/python-3.10%2B-blue)
+![Status](https://img.shields.io/badge/status-alpha-orange)
 
-------
+---
+
+## 📋 Table of Contents
+
+- [Overview](#overview)
+- [Features](#features)
+- [Architecture](#architecture)
+- [Installation](#installation)
+- [Configuration](#configuration)
+- [Quick Start](#quick-start)
+- [CLI Reference](#cli-reference)
+- [Output Format](#output-format)
+- [Technical Details](#technical-details)
+- [Development Guide](#development-guide)
+- [Troubleshooting](#troubleshooting)
+- [FAQ](#faq)
+- [Ethics & Legal](#ethics--legal)
+- [Contributing](#contributing)
+- [License](#license)
+
+---
+
+## 🎯 Overview
+
+LLM4Reverse provides two complementary workflows for reverse engineering frontend applications:
+
+1. **Static Audit (`audit`)**: Analyzes local JavaScript/TypeScript source code to extract API endpoint candidates using regex patterns, then enriches findings with LLM-powered reasoning to infer missing metadata (headers, parameters, authentication).
+
+2. **Dynamic Reverse (`reverse`)**: Captures runtime network traffic (HAR format) from a live web page using Playwright, then uses an LLM agent to analyze the traffic and extract structured API endpoint information.
+
+Both workflows generate comprehensive reports in JSON and Markdown formats, along with complete LLM reasoning traces for transparency and debugging.
+
+### Use Cases
+
+- **Security Research**: Discover undocumented API endpoints for security assessment
+- **API Documentation**: Automatically generate API documentation from frontend code
+- **Integration Testing**: Identify all API endpoints used by a frontend application
+- **Code Analysis**: Understand external dependencies and API contracts in legacy codebases
+
+---
 
 ## ✨ Features
 
-- **Headless capture** — Collect network requests, console logs and a trimmed DOM snapshot via Playwright.
-- **JS beautification & hints** — Prettify minified code and surface token‑like strings, API paths, *fetch*/XHR URLs.
-- **Optional AST extraction** — Use Node + esprima to list identifiers, literals and hidden endpoints.
-- **LLM reasoning** — Feed evidence to an OpenAI‑compatible model and receive a concise Markdown report.
-- **CLI first** — One command does all; install extras only when you need them.
+### Static Audit Features
 
-------
+- **Multi-pattern Regex Extraction**: Detects endpoints via multiple heuristics:
+  - `fetch()` and `axios` HTTP calls
+  - WebSocket connections (`new WebSocket()`)
+  - GraphQL operation hints
+  - Raw HTTP/HTTPS URLs
+  - Relative API paths (`/api/...`)
+- **Symbol Index**: Builds a cross-file symbol index (constants, functions, classes) to resolve variable references
+- **LLM Enrichment**: Uses ReAct agent with custom tools to infer:
+  - Missing URL base paths
+  - Required headers and authentication tokens
+  - Request body schemas and query parameters
+  - Confidence scores for each finding
+- **Deduplication**: Automatically removes duplicate findings based on type, method, URL, file, and line number
 
-## 🧱 Architecture & Project Layout
+### Dynamic Reverse Features
 
-**Runtime dataflow**
+- **HAR Capture**: Records complete network traffic using Playwright's HAR recording capability
+- **Intelligent Waiting**: Supports configurable wait times after network idle for single-page applications
+- **LLM Analysis**: ReAct agent analyzes HAR entries to extract:
+  - API endpoint URLs and HTTP methods
+  - Request/response headers
+  - Query parameters and request bodies
+  - Authentication mechanisms
+- **Headless/Headed Modes**: Run browser in headless mode for automation or with UI for debugging
 
-```text
-CLI (llm4reverse)
-      │
-      ├── BrowserTool (Playwright)
-      │      └─ Collect: requests(method/url/status/postDataSnippet), console logs, domSnippet
-      │
-      ├── JSBeautifyTool (jsbeautifier + regex hints)
-      │      └─ Output: beautified code, token-like strings, "/api/..." paths, fetch/xhr URLs
-      │
-      ├── JS AST (optional; Node + esprima)
-      │      └─ Output: identifiers, stringLiterals, fetchUrls, xhrUrls
-      │
-      └── ReverseAgent (optional LLM)
-             └─ Input: evidence JSON  →  Output: reverse_report.md
+### General Features
+
+- **Comprehensive Reporting**: Generates both JSON (machine-readable) and Markdown (human-readable) reports
+- **LLM Trace Logging**: Complete trace of all LLM interactions for transparency and debugging
+- **OpenAI-Compatible API**: Works with any OpenAI-compatible API endpoint (OpenAI, Qwen, local models, etc.)
+- **CLI-First Design**: Simple, intuitive command-line interface with clear subcommands
+- **Extensible Architecture**: Modular design allows easy extension and customization
+
+---
+
+## 🏗️ Architecture
+
+### Project Structure
+
 ```
-
-**Repository layout**
-
-```text
 LLM4Reverse/
-├─ llm4reverse/
-│  ├─ cli.py               # CLI entrypoints and argument parsing
-│  ├─ agent.py             # ReverseAgent: prompt + reasoning
-│  ├─ llm_client.py        # Minimal OpenAI-compatible client
-│  ├─ report.py            # Artifact writers (json/md)
-│  └─ tools/
-│     ├─ browser.py        # Playwright capture wrapper
-│     ├─ js_beautify.py    # jsbeautifier + regex hints
-│     ├─ static_audit.py   # directory‑level static audit (fetch/xhr/axios/$.ajax + const propagation)
-│     └─ js_ast.py         # Node + esprima runner (embedded script)
-├─ scripts/
-│  └─ install_playwright.sh
-├─ README.md
-├─ pyproject.toml
-├─ requirements.txt
-└─ LICENSE
+├── llm4reverse/                    # Main package
+│   ├── __init__.py                 # Package initialization and version
+│   ├── cli.py                      # CLI entrypoint and argument parsing
+│   ├── config.py                   # Configuration management
+│   │
+│   ├── llm/                        # LLM integration module
+│   │   ├── __init__.py
+│   │   └── client.py               # OpenAI-compatible client wrapper
+│   │
+│   ├── audit/                      # Static audit module
+│   │   ├── __init__.py
+│   │   ├── pipeline.py             # Main audit orchestration
+│   │   ├── scanner.py              # File system scanner
+│   │   ├── report.py               # Report generation
+│   │   │
+│   │   ├── extractors/             # Endpoint extraction
+│   │   │   ├── __init__.py
+│   │   │   └── regex_extractor.py  # Regex-based endpoint detection
+│   │   │
+│   │   ├── resolvers/              # Symbol resolution
+│   │   │   ├── __init__.py
+│   │   │   └── symbol_index.py     # Cross-file symbol index
+│   │   │
+│   │   ├── agents/                 # LLM agents
+│   │   │   ├── __init__.py
+│   │   │   └── endpoint_agent.py   # ReAct agent for endpoint enrichment
+│   │   │
+│   │   └── tools/                  # Agent tools
+│   │       ├── __init__.py
+│   │       ├── symbol_lookup.py    # Symbol lookup tool
+│   │       └── code_search.py      # Code search tool
+│   │
+│   └── reverse/                    # Dynamic reverse module
+│       ├── __init__.py
+│       ├── pipeline.py             # Main reverse orchestration
+│       ├── report.py                # Report generation
+│       │
+│       ├── collectors/             # Data collection
+│       │   ├── __init__.py
+│       │   └── browser.py          # Playwright browser session manager
+│       │
+│       ├── analyzers/              # Code analysis (future use)
+│       │   ├── __init__.py
+│       │   ├── js_beautify.py
+│       │   └── js_ast.py
+│       │
+│       └── agents/                 # LLM agents
+│           ├── __init__.py
+│           └── har_agent.py       # ReAct agent for HAR analysis
+│
+├── scripts/                        # Utility scripts
+│   └── install_playwright.sh      # Playwright browser installation
+│
+├── requirements.txt                 # Python dependencies
+├── pyproject.toml                   # Project metadata and build config
+├── README.md                       # This file (English)
+├── README_zh.md                    # Chinese documentation
+└── LICENSE                         # MIT License
 ```
 
-**Design principles**
+### Workflow Diagrams
 
-- Expert‑first: minimal magic; each module is small, explicit and well‑documented.
-- Optional dependencies: Playwright/Node only when needed; graceful degradation with clear errors.
-- Reproducible outputs: JSON+MD artifacts with stable field names for downstream tooling.
-- Safe by default: DOM is trimmed; request bodies are truncated; LLM usage is opt‑in.
+#### Static Audit Workflow
 
-------
+```
+┌─────────────────────────────────────────────────────────────┐
+│ 1. File Scanning                                             │
+│    - Recursively scan directory tree                        │
+│    - Filter by file extensions (.js, .ts, .jsx, .tsx)      │
+│    - Exclude directories (node_modules, dist, build, .git)    │
+└────────────────────┬────────────────────────────────────────┘
+                     │
+                     ▼
+┌─────────────────────────────────────────────────────────────┐
+│ 2. Regex Extraction                                          │
+│    - Apply multiple regex patterns to each file              │
+│    - Extract: fetch(), axios, WebSocket, GraphQL hints      │
+│    - Generate Finding objects (type, method, url, file, line)│
+└────────────────────┬────────────────────────────────────────┘
+                     │
+                     ▼
+┌─────────────────────────────────────────────────────────────┐
+│ 3. Deduplication                                             │
+│    - Remove duplicates based on (type, method, url, file,   │
+│      line) tuple                                             │
+└────────────────────┬────────────────────────────────────────┘
+                     │
+                     ▼
+┌─────────────────────────────────────────────────────────────┐
+│ 4. Symbol Index Building                                     │
+│    - Parse all source files for symbol definitions           │
+│    - Index: const/let/var, functions, classes                │
+│    - Build lookup table: identifier → SymbolRef[]           │
+└────────────────────┬────────────────────────────────────────┘
+                     │
+                     ▼
+┌─────────────────────────────────────────────────────────────┐
+│ 5. LLM Enrichment (ReAct Agent)                             │
+│    For each finding:                                         │
+│    - Agent receives: file path, line number, code snippet    │
+│    - Tools available:                                        │
+│      * SymbolLookupTool: resolve variable references         │
+│      * CodeSearchTool: search codebase for related code      │
+│    - Agent infers: headers, params, body schema, auth       │
+│    - Updates Finding with enriched metadata                  │
+└────────────────────┬────────────────────────────────────────┘
+                     │
+                     ▼
+┌─────────────────────────────────────────────────────────────┐
+│ 6. Report Generation                                         │
+│    - static_findings.json: Complete findings in JSON         │
+│    - static_report.md: Human-readable Markdown report        │
+│    - audit_trace.json: Full LLM interaction trace           │
+└─────────────────────────────────────────────────────────────┘
+```
 
-## ⚙️ Requirements
+#### Dynamic Reverse Workflow
 
-- Python 3.10+
-- *Optional* — Node 18+ (for `--ast`)
-- *Optional* — Playwright browsers (Chromium) ➜ `llm4reverse playwright-install`
-- *Optional* — OpenAI‑compatible API (`OPENAI_API_KEY`)
+```
+┌─────────────────────────────────────────────────────────────┐
+│ 1. Browser Launch (Playwright)                               │
+│    - Launch Chromium browser (headless or headed)            │
+│    - Enable HAR recording                                    │
+│    - Navigate to target URL                                  │
+│    - Wait for networkidle (or domcontentloaded fallback)     │
+│    - Additional timeout for SPA loading                      │
+└────────────────────┬────────────────────────────────────────┘
+                     │
+                     ▼
+┌─────────────────────────────────────────────────────────────┐
+│ 2. HAR File Generation                                       │
+│    - Playwright automatically saves HAR file                 │
+│    - Contains all network requests/responses                │
+│    - Includes headers, bodies, timing information           │
+└────────────────────┬────────────────────────────────────────┘
+                     │
+                     ▼
+┌─────────────────────────────────────────────────────────────┐
+│ 3. HAR Parsing                                               │
+│    - Load HAR file as JSON                                   │
+│    - Extract entries from log.entries                        │
+└────────────────────┬────────────────────────────────────────┘
+                     │
+                     ▼
+┌─────────────────────────────────────────────────────────────┐
+│ 4. LLM Analysis (ReAct Agent)                               │
+│    - Agent receives: full HAR dictionary                     │
+│    - Tool available:                                         │
+│      * HarSearchTool: search HAR entries by URL/header      │
+│    - Agent analyzes traffic and extracts:                    │
+│      * API endpoint URLs and methods                         │
+│      * Request/response headers                              │
+│      * Query parameters and request bodies                   │
+│      * Authentication mechanisms                             │
+└────────────────────┬────────────────────────────────────────┘
+                     │
+                     ▼
+┌─────────────────────────────────────────────────────────────┐
+│ 5. Report Generation                                         │
+│    - reverse_report.json: Extracted endpoints in JSON        │
+│    - reverse_report.md: Human-readable Markdown report       │
+│    - reverse_trace.json: Full LLM interaction trace         │
+│    - traffic.har: Original HAR file (preserved)              │
+└─────────────────────────────────────────────────────────────┘
+```
 
-------
+### Component Interactions
+
+```
+┌──────────────┐
+│   CLI (cli)  │
+└──────┬───────┘
+       │
+       ├─────────────────┐
+       │                 │
+       ▼                 ▼
+┌─────────────┐   ┌──────────────┐
+│ Audit       │   │ Reverse      │
+│ Pipeline    │   │ Pipeline     │
+└──────┬──────┘   └──────┬───────┘
+       │                 │
+       ├─────────┐       ├──────────┐
+       │         │       │          │
+       ▼         ▼       ▼          ▼
+┌─────────┐ ┌──────┐ ┌──────┐ ┌─────────┐
+│ Scanner │ │Regex │ │Browser│ │ HAR     │
+│         │ │Extr. │ │Session│ │ Agent   │
+└────┬────┘ └──┬───┘ └───┬───┘ └────┬────┘
+     │         │         │          │
+     │         │         │          │
+     └─────────┴─────────┴──────────┘
+                 │
+                 ▼
+          ┌──────────────┐
+          │ LLM Client   │
+          │ (OpenAI API) │
+          └──────────────┘
+```
+
+---
 
 ## 📦 Installation
 
+### Prerequisites
+
+- **Python 3.10 or higher** (tested with 3.10, 3.11, 3.12)
+- **pip** (Python package manager)
+- **Git** (for cloning the repository)
+- **OpenAI-compatible API access** (API key required)
+
+### Step-by-Step Installation
+
+1. **Clone the repository**:
 ```bash
-# clone & install editable (recommended for hacking)
 git clone https://github.com/BruceWen1/LLM4Reverse.git
 cd LLM4Reverse
-pip install -e .
-
-# install Playwright browsers (if you plan to capture pages)
-llm4reverse playwright-install
 ```
 
-Set environment variables in **.env** or via shell:
+2. **Install the package** (recommended: use a virtual environment):
+   ```bash
+   # Create virtual environment (optional but recommended)
+   python -m venv venv
+   
+   # Activate virtual environment
+   # On Windows:
+   venv\Scripts\activate
+   # On Linux/macOS:
+   source venv/bin/activate
+   
+   # Install package in editable mode
+   pip install -e .
+   ```
 
-```text
-OPENAI_API_KEY=sk-...
-OPENAI_BASE_URL=      # optional, for Azure-OpenAI or self‑hosted endpoint
-OPENAI_MODEL=gpt-4o
-```
+3. **Install Playwright browsers** (required for dynamic reverse):
+   ```bash
+   playwright install chromium
+   ```
+   
+   Or use the provided script (Linux/macOS):
+   ```bash
+   bash scripts/install_playwright.sh
+   ```
 
-*To enable AST*:  `npm install -g esprima`  *(or local project install)*
+4. **Verify installation**:
+   ```bash
+   llm4reverse --version
+   ```
 
-------
+### Dependencies
 
-## 🚀 Quickstart
+The following packages are automatically installed:
+
+- `python-dotenv>=1.0.1` - Environment variable management
+- `openai>=1.35.0` - OpenAI API client
+- `jsbeautifier>=1.15.1` - JavaScript code formatting
+- `beautifulsoup4>=4.12.2` - HTML parsing (for future features)
+- `playwright>=1.45.0` - Browser automation and HAR capture
+- `langchain>=0.2.7` - LLM framework and agent orchestration
+- `langchain-core>=0.2.7` - Core LangChain components
+- `langchain-community>=0.2.7` - Community LangChain integrations
+- `langchain-openai>=0.1.0` - OpenAI integration for LangChain
+
+---
+
+## ⚙️ Configuration
+
+### Environment Variables
+
+LLM4Reverse uses environment variables for configuration. You can set them in your shell or create a `.env` file in the project root.
+
+#### Required Variables
+
+- **`API_KEY`** (required): Your API key for the OpenAI-compatible service
+  ```bash
+  export API_KEY="your-api-key"
+  ```
+
+#### Optional Variables
+
+- **`BASE_URL`** (optional): Custom API endpoint URL (for non-OpenAI services)
+  ```bash
+  export BASE_URL="https://dashscope.aliyuncs.com/compatible-mode/v1"
+  ```
+
+- **`MODEL`** (optional): Default model name to use
+  ```bash
+  export MODEL="gpt-4o"
+  ```
+
+- **`TEMPERATURE`** (optional): Sampling temperature for LLM (default: 0.0)
+  ```bash
+  export TEMPERATURE="0.0"
+  ```
+
+### Creating a `.env` File
+
+Create a `.env` file in the project root:
 
 ```bash
-# evidence only (no LLM)
-llm4reverse reverse --url https://example.com --no-llm
-
-# add a JS file for beautify / scan
-llm4reverse reverse --url https://example.com \
-                   --jsfile ./app.min.js --no-llm
-
-# trigger a click after page load
-llm4reverse reverse --url https://example.com --click "#login" --no-llm
-
-# include AST (requires Node + esprima)
-llm4reverse reverse --url https://example.com \
-                   --jsfile ./app.min.js --ast --no-llm
-
-# full pipeline with LLM summary
-env OPENAI_API_KEY=sk-... \
-llm4reverse reverse --url https://example.com \
-                   --jsfile ./app.min.js --ast
+# .env
+API_KEY=your-api-key
+BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
+MODEL=qwen3-max
+TEMPERATURE=0.0
 ```
 
-Output (default **./artifacts**):
+The `python-dotenv` package automatically loads this file when the package is imported.
 
-```
-reverse_report.md    # LLM summary (when not --no-llm)
-static_findings.json # endpoint candidates (from static-audit)
-static_report.md     # LLM summary for static audit (with --with-llm)
-capture.json         # requests / console / domSnippet
-js_beautify.json     # prettified JS + regex hints (when --jsfile)
-js_ast.json          # AST summary (when --ast)
+### Supported LLM Providers
+
+LLM4Reverse works with any OpenAI-compatible API endpoint, including:
+
+- **OpenAI**: `https://api.openai.com/v1` (default)
+- **Azure OpenAI Service**: `https://YOUR_RESOURCE_NAME.openai.azure.com/v1`
+- **Google Gemini**: `https://generativelanguage.googleapis.com/v1beta`
+- **Anthropic Claude**: `https://api.anthropic.com/v1`
+- **Qwen (Alibaba Cloud)**: `https://dashscope.aliyuncs.com/compatible-mode/v1`
+- **Local models**:
+  - **Ollama**: `http://127.0.0.1:11434/v1`
+  - **LM Studio**: `http://127.0.0.1:1234/v1`
+  - **vLLM**: `http://127.0.0.1:8000/v1`
+  - **LocalAI**: `http://127.0.0.1:8080/v1`
+  - **llama.cpp server**: `http://127.0.0.1:8080/v1`
+- **Other providers**: Any service that implements the OpenAI API format
+
+### Configuration Priority
+
+1. Environment variables (highest priority)
+2. `.env` file
+3. Default values (lowest priority)
+
+---
+
+## 🚀 Quick Start
+
+### Example 1: Static Audit
+
+Analyze a local JavaScript/TypeScript codebase:
+
+```bash
+llm4reverse audit --path ./my-frontend-app
 ```
 
-------
+This will:
+1. Scan all `.js`, `.ts`, `.jsx`, `.tsx` files in `./my-frontend-app`
+2. Extract API endpoint candidates using regex
+3. Build a symbol index
+4. Enrich findings with LLM reasoning
+5. Generate reports in the target directory
+
+**Output files**:
+- `./my-frontend-app/static_findings.json` - Complete findings in JSON
+- `./my-frontend-app/static_report.md` - Human-readable report
+- `./my-frontend-app/audit_trace.json` - LLM interaction trace
+
+### Example 2: Dynamic Reverse
+
+Capture and analyze network traffic from a live website:
+
+```bash
+llm4reverse reverse --url https://example.com
+```
+
+This will:
+1. Launch a headless browser
+2. Navigate to `https://example.com`
+3. Record all network traffic as HAR
+4. Analyze traffic with LLM
+5. Generate reports in `./reverse_out/`
+
+**Output files**:
+- `./reverse_out/traffic.har` - Original HAR file
+- `./reverse_out/reverse_report.json` - Extracted endpoints in JSON
+- `./reverse_out/reverse_report.md` - Human-readable report
+- `./reverse_out/reverse_trace.json` - LLM interaction trace
+
+### Example 3: Custom Options
+
+```bash
+# Static audit with custom file filters
+llm4reverse audit \
+  --path ./src \
+  --include .js,.ts \
+  --exclude node_modules,dist,tests
+
+# Dynamic reverse with visible browser and longer timeout
+llm4reverse reverse \
+  --url https://example.com \
+  --output ./my_results \
+  --no-headless \
+  --timeout 60
+
+# Enable verbose logging
+llm4reverse --verbose reverse --url https://example.com
+```
+
+---
 
 ## 🧰 CLI Reference
 
-```text
-llm4reverse playwright-install
-    Install Playwright browsers (Chromium).
+### Global Options
 
-llm4reverse reverse --url URL [options]
-    --click CSS      click once after load
-    --wait-ms INT    wait after load/click  (default 2500)
-    --jsfile FILE    local JS for beautify / scan
-    --ast            enable Node + esprima AST
-    --no-browser     skip Playwright capture
-    --show-browser   run non‑headless browser
-    --outdir DIR     output directory  (default ./artifacts)
-    --model NAME     override OPENAI_MODEL
-    --base-url URL   override OPENAI_BASE_URL
-    --no-llm         evidence only, no LLM reasoning
+```
+llm4reverse [OPTIONS] COMMAND [ARGS]
 
-llm4reverse static-audit --path PATH [options]
-    --include GLOB   repeatable; default includes js/mjs/ts/jsx/tsx
-    --exclude GLOB   repeatable; exclude matching files
-    --max-files N    cap number of scanned files (default 1000)
-    --with-llm       summarize findings with LLM → static_report.md
-    --outdir DIR     output directory (default ./artifacts)
-    --model NAME     override OPENAI_MODEL (with --with-llm)
-    --base-url URL   override OPENAI_BASE_URL (with --with-llm)
+Options:
+  -v, --verbose    Enable debug logging
+  --version        Show version and exit
 ```
 
-Exit codes: 0 = success, 2 = jsfile not found, other = error.
+### `reverse` Subcommand
 
-------
+Dynamic reverse engineering workflow.
 
-## 📁 Project Structure (Detailed)
+```
+llm4reverse reverse --url URL [OPTIONS]
 
-**Module responsibilities**
+Required Arguments:
+  --url URL        Target webpage URL to reverse engineer
 
-- `llm4reverse/cli.py` — CLI surface; wires arguments → workflow; handles Playwright install; writes artifacts.
-- `llm4reverse/agent.py` — Loads a fixed system prompt, sends evidence to the LLM, returns Markdown.
-- `llm4reverse/llm_client.py` — Thin OpenAI‑compatible client; honors `OPENAI_API_KEY`, `OPENAI_BASE_URL`, `OPENAI_MODEL`.
-- `llm4reverse/report.py` — Consolidated writers for `capture.json`, `js_beautify.json`, `js_ast.json`, `reverse_report.md`.
-- `llm4reverse/tools/browser.py` — Playwright capture; best‑effort response status correlation; DOM prettify + trim.
-- `llm4reverse/tools/js_beautify.py` — Beautify JS; extract conservative regex hints (token/auth/jwt, `/api/...`, fetch/xhr).
-- `llm4reverse/tools/js_ast.py` — Runs a tiny Node script that requires `esprima`; returns identifiers/literals/URLs.
-
-**Coding conventions**
-
-- Google‑style docstrings, type hints, explicit error messages.
-- Keep functions small; no hidden retries; propagate structured errors in JSON.
-
-------
-
-## 🔧 Configuration
-
-Environment variables (via shell or `.env`):
-
-```text
-OPENAI_API_KEY   # required to enable LLM reasoning
-OPENAI_BASE_URL  # optional; custom OpenAI‑compatible endpoint
-OPENAI_MODEL     # optional; default: gpt-4o
+Options:
+  --output, --outdir DIR    Output directory (default: ./reverse_out)
+  --no-headless            Run browser in UI mode (default: headless)
+  --timeout SECONDS        Extra wait time after networkidle (default: 30)
+  -v, --verbose            Enable debug logging
 ```
 
-Runtime flags of interest:
-
-- `--no-llm`  : disable LLM; only artifacts are produced.
-- `--no-browser` / `--show-browser` : skip capture or run interactive Chrome.
-- `--wait-ms` : increase if the page triggers late XHR; decrease for faster runs.
-- `--ast`     : requires Node 18+ and `npm i -g esprima` (or local install).
-
-Playwright install (once per machine/user):
-
+**Examples**:
 ```bash
-llm4reverse playwright-install
+# Basic usage
+llm4reverse reverse --url https://example.com
+
+# Custom output directory
+llm4reverse reverse --url https://example.com --output ./results
+
+# Visible browser for debugging
+llm4reverse reverse --url https://example.com --no-headless
+
+# Longer timeout for slow-loading SPAs
+llm4reverse reverse --url https://example.com --timeout 60
 ```
 
-AST prerequisites:
+### `audit` Subcommand
 
+Static code audit workflow.
+
+```
+llm4reverse audit --path PATH [OPTIONS]
+
+Required Arguments:
+  --path PATH      Path to local code directory
+
+Options:
+  --include EXT,EXT,...    Comma-separated file extensions to include
+                           (default: .js,.ts,.jsx,.tsx)
+  --exclude DIR,DIR,...   Comma-separated directory names to exclude
+                           (default: node_modules,dist,build,.git)
+  -v, --verbose            Enable debug logging
+```
+
+**Examples**:
 ```bash
-# global
-npm install -g esprima
-# or local in any working dir
-npm init -y && npm i esprima
+# Basic usage
+llm4reverse audit --path ./src
+
+# Custom file types
+llm4reverse audit --path ./src --include .js,.ts
+
+# Custom exclusions
+llm4reverse audit --path ./src --exclude node_modules,dist,tests,.git
 ```
 
-------
+### Exit Codes
 
-## 🧪 Usage Recipes
+- `0`: Success
+- `1`: Error (check logs for details)
 
-**Evidence‑only sweep (quick triage)**
+---
 
-```bash
-llm4reverse reverse --url https://target.site --no-llm
-```
+## 📄 Output Format
 
-**Static‑only JS review**
+### Static Audit Output
 
-```bash
-llm4reverse reverse --url https://dummy --no-browser --jsfile ./app.min.js --no-llm
-```
+#### `static_findings.json`
 
-**AST‑assisted string/URL discovery**
+Complete findings in JSON format:
 
-```bash
-llm4reverse reverse --url https://dummy --no-browser --jsfile ./app.min.js --ast --no-llm
-```
-
-**Trigger one interaction then collect**
-
-```bash
-llm4reverse reverse --url https://target.site --click "#login" --no-llm
-```
-
-**Full run with LLM summary**
-
-```bash
-export OPENAI_API_KEY=sk-...
-llm4reverse reverse --url https://target.site --jsfile ./app.min.js --ast
-```
-
-Tips
-
-- Combine `--click` with a larger `--wait-ms` if the page defers XHR after UI actions.
-- For SPA with route changes, run multiple passes with different `--click` selectors.
-- Consider saving raw JS separately to keep `artifacts/` small.
-
-------
-
-## 📤 Output Files (format & notes)
-
-```
-capture.json
+```json
 {
-  "url": "https://target.site",
-  "requests": [{ "method": "GET", "url": "https://api...", "status": 200, "postDataSnippet": "..." }],
-  "console": ["[log] ...", "[warn] ..."],
-  "domSnippet": "<html>... trimmed ...</html>"
+  "findings": [
+    {
+      "type": "http",
+      "method": "POST",
+      "url": "/api/users",
+      "file": "src/api/client.js",
+      "line": 42,
+      "snippet": "const response = await fetch('/api/users', { method: 'POST', ... })",
+      "confidence": 0.9,
+      "headers": {
+        "Content-Type": "application/json",
+        "Authorization": "Bearer ${token}"
+      },
+      "params": {},
+      "body": {
+        "name": "string",
+        "email": "string"
+      }
+    }
+  ]
 }
-js_beautify.json
+```
+
+#### `static_report.md`
+
+Human-readable Markdown report with sections for each finding:
+
+```markdown
+# Static Audit Report
+
+### HTTP POST /api/users
+- **File**: `src/api/client.js:42`
+- **Method**: `POST`
+- **Confidence**: `0.90`
+- **Headers**:
+```json
 {
-  "beautified": "function a(){...}",
-  "patterns": {
-    "token_like": ["token=..."],
-    "api_paths": ["/api/v1/..."],
-    "fetch_calls": ["https://api..."],
-    "xhr_open": [["GET", "/api/..."]]
+  "Content-Type": "application/json",
+  "Authorization": "Bearer ${token}"
+}
+```
+- **Body**:
+```json
+{
+  "name": "string",
+  "email": "string"
+}
+```
+- **Code Snippet**:
+```js
+const response = await fetch('/api/users', { method: 'POST', ... })
+```
+```
+
+#### `audit_trace.json`
+
+Complete trace of LLM interactions:
+
+```json
+[
+  {
+    "role": "assistant",
+    "content": "Thought: I need to analyze this endpoint..."
+  },
+  {
+    "role": "assistant",
+    "content": "Action: SymbolLookupTool\nAction Input: baseURL"
   }
-}
-js_ast.json
+]
+```
+
+### Dynamic Reverse Output
+
+#### `reverse_report.json`
+
+Extracted endpoints from HAR analysis:
+
+```json
+[
+  {
+    "url": "https://api.example.com/v1/users",
+    "method": "GET",
+    "headers": {
+      "Authorization": "Bearer ...",
+      "Content-Type": "application/json"
+    },
+    "params": {
+      "page": "1",
+      "limit": "10"
+    },
+    "body": null,
+    "auth": "Bearer token"
+  }
+]
+```
+
+#### `reverse_report.md`
+
+Human-readable Markdown report:
+
+```markdown
+# Dynamic Reverse Report
+
+## `GET` https://api.example.com/v1/users
+
+```json
 {
-  "identifiers": ["sign", "ts", "nonce"],
-  "stringLiterals": ["/api/v2/...", "Bearer "],
-  "fetchUrls": ["https://api..."],
-  "xhrUrls": ["/ajax/..."]
+  "url": "https://api.example.com/v1/users",
+  "method": "GET",
+  "headers": {
+    "Authorization": "Bearer ...",
+    "Content-Type": "application/json"
+  },
+  "params": {
+    "page": "1",
+    "limit": "10"
+  },
+  "body": null,
+  "auth": "Bearer token"
 }
-reverse_report.md
+```
 ```
 
-- Sections: `Targets`, `Findings (APIs, Params, Headers, Tokens)`, `Risks / Weak points`, `Suggested next steps`.
-- Keep in VCS for audit trails; redact secrets if any were captured.
+#### `traffic.har`
 
-------
+Standard HAR (HTTP Archive) format file containing all network traffic. Can be opened in:
+- Chrome DevTools (Network tab → Import HAR)
+- HAR Analyzer tools
+- Any HAR-compatible tool
 
-## 🧩 Module Reference
+#### `reverse_trace.json`
 
-- `BrowserTool.capture(url, click_selector, wait_after_ms, include_dom)` → dict with `requests`, `console`, `domSnippet`.
-- `JSBeautifyTool.run(code)` → dict with `beautified` and `patterns`.
-- `try_extract_ast(code)` → dict with `identifiers`, `stringLiterals`, `fetchUrls`, `xhrUrls` or `{error}`.
-- `ReverseAgent.reason(evidence)` → Markdown summary string.
-- `save_artifacts(outdir, ...)` → writes JSON/MD to disk.
+Complete trace of LLM interactions during HAR analysis.
 
-------
+---
 
-## 🧱 Development Guide
+## 🔧 Technical Details
 
-- Style: type hints + Google‑style docstrings; small, composable functions.
-- Extending patterns: add conservative regex to `js_beautify.py` and document false‑positive risk.
-- Custom prompts: tweak the embedded prompt in `agent.py` for your domain (e.g., auth signatures, anti‑bot flows).
-- New tools: add under `llm4reverse/tools/` and wire in `cli.py`; prefer explicit flags over implicit behavior.
-- Reproducibility: keep artifact schemas stable; version bump if you change fields.
+### Regex Extraction Patterns
 
-------
+The static audit uses multiple regex patterns to detect endpoints:
 
-## ⚠️ Notes & Limitations
+1. **HTTP Request Patterns**:
+   - `fetch('...')` or `fetch("...")`
+   - `axios.get/post/put/delete/patch('...')`
 
-- No de‑obfuscation beyond beautify + hints; complex packers require custom logic.
-- Status matching is best‑effort; heavily async apps may interleave responses.
-- LLM summaries do not replace manual verification; always validate with real requests.
+2. **Raw URL Patterns**:
+   - `https?://[a-zA-Z0-9_\-./:?=&%#]+`
+   - `/api/[a-zA-Z0-9_\-./:?=&%#]+`
 
-------
+3. **WebSocket Patterns**:
+   - `new WebSocket('...')` or `new WebSocket("...")`
 
-## ❓ FAQ (selected)
+4. **GraphQL Hints**:
+   - `/graphql` in URL
+   - `operationName` in code
 
-**Playwright missing?**  Install Python package and browsers:
+### Symbol Index
+
+The symbol index uses regex to extract:
+
+- **Constants/Variables**: `const`, `let`, `var` declarations
+- **Functions**: `function` and `async function` declarations
+- **Classes**: `class` declarations
+
+Pattern:
+```regex
+(?:export\s+)?(?:const|let|var)\s+(?P<const>[A-Za-z_][\w$]*)\s*=
+(?:export\s+)?(?:async\s+)?function\s+(?P<func>[A-Za-z_][\w$]*)\s*\(
+(?:export\s+)?class\s+(?P<class>[A-Za-z_][\w$]*)
+```
+
+### LLM Agent Architecture
+
+Both workflows use **ReAct (Reasoning + Acting)** agents:
+
+1. **Agent receives**: Context (code snippet, file path, HAR entries, etc.)
+2. **Agent has access to tools**:
+   - Static audit: `SymbolLookupTool`, `CodeSearchTool`
+   - Dynamic reverse: `HarSearchTool`
+3. **Agent reasons**: Uses LLM to think step-by-step
+4. **Agent acts**: Calls tools to gather additional information
+5. **Agent responds**: Returns structured JSON with endpoint details
+
+### Browser Session Management
+
+The dynamic reverse workflow uses Playwright's context manager pattern:
+
+```python
+with BrowserSession(har_path="traffic.har", headless=True) as page:
+    page.goto(url, wait_until="networkidle")
+    page.wait_for_timeout(timeout * 1000)
+```
+
+HAR is automatically saved when the context closes.
+
+### Error Handling
+
+- **File reading errors**: Logged and skipped, processing continues
+- **LLM API errors**: Logged with full traceback, original finding preserved
+- **Browser navigation errors**: Falls back to `domcontentloaded` if `networkidle` times out
+- **JSON parsing errors**: Raw text stored in findings, processing continues
+
+### Performance Considerations
+
+- **Symbol index**: Built once per audit, cached in memory
+- **LLM calls**: Sequential (one finding at a time) to avoid rate limits
+- **File scanning**: Uses `pathlib.rglob()` for efficient directory traversal
+- **HAR file size**: Can be large (10-100MB+), ensure sufficient disk space
+
+---
+
+## 🛠️ Development Guide
+
+### Project Structure Guidelines
+
+- **Type hints**: All functions should have type annotations
+- **Docstrings**: Use concise docstrings following Google/NumPy style
+- **Modularity**: Keep functions small and composable
+- **Error handling**: Use try-except with proper logging
+
+### Adding New Extractors
+
+To add a new regex pattern for endpoint extraction:
+
+1. Edit `llm4reverse/audit/extractors/regex_extractor.py`
+2. Add pattern to `_HTTP_PATTERNS`, `_WS_PATTERNS`, or create new pattern list
+3. Update `extract_endpoints()` function to use new pattern
+4. Test with sample code
+
+### Adding New Agent Tools
+
+To add a new tool for the LLM agent:
+
+1. Create tool function in `llm4reverse/audit/tools/` or `llm4reverse/reverse/agents/`
+2. Use `langchain_core.tools.Tool` to wrap the function
+3. Add tool to tools list in agent initialization
+4. Update agent prompt to describe the new tool
+
+### Testing
+
+Run the test suite:
 
 ```bash
-pip install -r requirements.txt
-llm4reverse playwright-install
+# Run tests using pytest or your preferred testing framework
+pytest
 ```
 
-**Node/esprima missing?**  Install Node 18+ and:
+### Code Style
+
+- Follow PEP 8
+- Use `black` for formatting (if configured)
+- Maximum line length: 100 characters (flexible)
+
+### Version Management
+
+- Update `__version__` in `llm4reverse/__init__.py`
+- Update `version` in `pyproject.toml`
+- Document breaking changes in CHANGELOG.md
+
+---
+
+## 🐛 Troubleshooting
+
+### Common Issues
+
+#### 1. "Missing API_KEY" Error
+
+**Problem**: `RuntimeError: Missing API_KEY`
+
+**Solution**: 
+- Set `API_KEY` environment variable
+- Or create `.env` file with `API_KEY=your-api-key`
+
+#### 2. Playwright Browser Not Found
+
+**Problem**: `playwright._impl._api_types.Error: Executable doesn't exist`
+
+**Solution**:
+```bash
+playwright install chromium
+```
+
+#### 3. LLM API Timeout
+
+**Problem**: Requests timeout or fail
+
+**Solution**:
+- Check network connectivity
+- Verify `BASE_URL` is correct
+- Increase timeout in `llm/client.py` (default: 60s)
+- Check API key validity
+
+#### 4. No Endpoints Found
+
+**Problem**: Static audit finds no endpoints
+
+**Solution**:
+- Check file extensions match `--include` patterns
+- Verify code contains fetch/axios/WebSocket calls
+- Check excluded directories don't contain target files
+- Enable verbose logging: `llm4reverse -v audit --path ...`
+
+#### 5. HAR File Empty or Missing
+
+**Problem**: `traffic.har` is empty or not generated
+
+**Solution**:
+- Increase `--timeout` value
+- Try `--no-headless` to see browser behavior
+- Check target URL is accessible
+- Verify Playwright browser is installed
+
+#### 6. JSON Parsing Errors in Reports
+
+**Problem**: LLM returns non-JSON output
+
+**Solution**:
+- This is handled automatically (raw text stored)
+- Check `*_trace.json` for LLM reasoning
+- May indicate LLM model incompatibility
+- Try different model or adjust temperature
+
+### Debug Mode
+
+Enable verbose logging:
 
 ```bash
-npm install -g esprima
-# or: npm init -y && npm i esprima
+llm4reverse -v audit --path ./src
+llm4reverse -v reverse --url https://example.com
 ```
 
-**No API key?**  Use `--no-llm` to skip reasoning and inspect artifacts only.
+This shows:
+- File scanning progress
+- Regex extraction results
+- Symbol index building
+- LLM API calls
+- Error details with tracebacks
 
-**Large artifacts?**  Reduce `--wait-ms`, skip DOM (`include_dom=False` in custom code), or post‑process JSON.
+### Getting Help
 
-------
+1. Check this README
+2. Review `*_trace.json` files for LLM reasoning
+3. Enable verbose logging (`-v` flag)
+4. Open an issue on GitHub with:
+   - Error message
+   - Command used
+   - Relevant log output
+   - Environment details (OS, Python version, etc.)
+
+---
+
+## ❓ FAQ
+
+### Q: Can I use this with local LLM models?
+
+**A**: Yes! Set `BASE_URL` to your local OpenAI-compatible API endpoint (e.g., `http://localhost:11434/v1`).
+
+### Q: How accurate are the extracted endpoints?
+
+**A**: Accuracy depends on:
+- Code quality and patterns
+- LLM model capabilities
+- Network traffic completeness (for dynamic reverse)
+
+Always validate findings manually before use in production.
+
+### Q: Does this work with minified JavaScript?
+
+**A**: Partially. Regex patterns can detect URLs and basic patterns, but symbol resolution and code analysis work better with readable code. Consider using a JavaScript beautifier first.
+
+### Q: Can I customize the regex patterns?
+
+**A**: Yes, edit `llm4reverse/audit/extractors/regex_extractor.py` and modify the pattern lists.
+
+### Q: How do I exclude specific files (not just directories)?
+
+**A**: Currently, only directory exclusion is supported. File-level filtering can be added by modifying `scanner.py`.
+
+### Q: What's the difference between static audit and dynamic reverse?
+
+**A**:
+- **Static audit**: Analyzes source code without running it. Finds endpoints defined in code.
+- **Dynamic reverse**: Captures actual network traffic. Finds endpoints that are actually called at runtime.
+
+Both approaches are complementary and can reveal different endpoints.
+
+### Q: Can I use this for API documentation generation?
+
+**A**: Yes! The generated reports can serve as a starting point for API documentation, though manual review and enhancement is recommended.
+
+### Q: Is this tool safe to use on production systems?
+
+**A**: The tool itself is safe, but:
+- Only use on systems you own or have explicit permission to test
+- Be aware of rate limits and API costs
+- Review generated reports before sharing
+
+### Q: How do I contribute?
+
+**A**: See the [Contributing](#contributing) section below.
+
+---
 
 ## 🔐 Ethics & Legal
 
-Use this toolkit **only** on assets you own or have explicit permission to test.
- Violating terms, policies or laws is **your** responsibility.
+### Important Disclaimer
 
-------
+**LLM4Reverse is a tool for security research, API documentation, and legitimate reverse engineering purposes only.**
 
-## 🗺️ Roadmap
+### Usage Guidelines
 
-- String / constant propagation de‑obfuscator
-- Chrome DevTools Protocol coverage & source‑map support
-- Guided click‑path explorer
-- Risk scoring + PoC scaffolding
-- Simple Web UI playground
+- ✅ **DO**: Use on codebases you own or have explicit permission to analyze
+- ✅ **DO**: Use for security research with proper authorization
+- ✅ **DO**: Use for understanding your own applications
+- ❌ **DON'T**: Use on systems without permission
+- ❌ **DON'T**: Use for malicious purposes
+- ❌ **DON'T**: Violate terms of service or laws
 
-------
+### Legal Responsibility
 
-## 📝 License
+Users are solely responsible for ensuring their use of LLM4Reverse complies with:
+- Applicable laws and regulations
+- Terms of service of target systems
+- Ethical guidelines for security research
 
-MIT License © 2025 [@BruceWen1](https://github.com/BruceWen1)
+The authors and contributors of LLM4Reverse assume no liability for misuse of this tool.
 
-------
+---
 
 ## 🤝 Contributing
 
-Pull requests and issues are welcome. Please follow Google‑style docstrings, keep README sections in sync, and respect the ethical disclaimer.
+Contributions are welcome! Here's how you can help:
+
+### How to Contribute
+
+1. **Fork the repository**
+2. **Create a feature branch**: `git checkout -b feature/your-feature-name`
+3. **Make your changes**: Follow the development guidelines
+4. **Test your changes**: Run tests and ensure they pass
+5. **Update documentation**: Keep README and docstrings in sync
+6. **Commit your changes**: Use clear, descriptive commit messages
+7. **Push to your fork**: `git push origin feature/your-feature-name`
+8. **Open a Pull Request**: Provide a clear description of changes
+
+### Contribution Guidelines
+
+- **Code style**: Follow PEP 8, use type hints, write docstrings
+- **Testing**: Add tests for new features
+- **Documentation**: Update README for user-facing changes
+- **Compatibility**: Maintain Python 3.10+ compatibility
+- **Ethics**: Ensure contributions align with ethical use guidelines
+
+### Areas for Contribution
+
+- Additional regex patterns for endpoint detection
+- Support for more programming languages
+- Improved LLM prompts for better accuracy
+- Performance optimizations
+- Additional report formats (HTML, PDF, etc.)
+- Better error messages and user experience
+- Documentation improvements
+
+### Reporting Issues
+
+When reporting issues, please include:
+- Description of the problem
+- Steps to reproduce
+- Expected vs. actual behavior
+- Environment details (OS, Python version, etc.)
+- Relevant log output (with sensitive data redacted)
+
+---
+
+## 📝 License
+
+This project is licensed under the **MIT License**.
+
+See [LICENSE](LICENSE) file for details.
+
+Copyright © 2025 [@BruceWen1](https://github.com/BruceWen1)
+
+---
+
+## 🙏 Acknowledgments
+
+- **LangChain**: For the excellent LLM framework and agent orchestration
+- **Playwright**: For robust browser automation and HAR capture
+- **OpenAI**: For the API format that enabled compatibility with many providers
+- **Community**: For feedback, contributions, and support
+
+---
+
+## 🗺️ Roadmap
+
+Future improvements planned:
+
+- [ ] Enhanced AST-based code analysis (beyond regex)
+- [ ] Interactive mode for reviewing findings
+- [ ] Integration with API testing tools
+- [ ] Support for GraphQL schema extraction
+- [ ] Web UI for report visualization
+- [ ] Batch processing for multiple targets
+- [ ] Export to OpenAPI/Swagger format
+- [ ] Performance optimizations (parallel LLM calls, caching)
+- [ ] Better handling of minified/obfuscated code

@@ -1,5 +1,9 @@
 # -*- coding: utf-8 -*-
 """
+js_ast.py
+Reverse Module - Analyzers
+=====================
+
 AST extraction via Node + esprima.
 
 - No bundled esprima to keep package light.
@@ -101,37 +105,49 @@ main();
 
 
 def _node_bin() -> Optional[str]:
-    """Return path to node executable if present in PATH."""
+    """
+    Return path to node executable if present in PATH.
+
+    Returns:
+        Optional[str]: Path to node executable, or None if not found.
+    """
     return shutil.which("node")
 
 
 def try_extract_ast(code: str) -> Dict[str, Any]:
-    """Extract JS AST info using Node + esprima.
+    """
+    Extract JS AST info using Node + esprima.
 
     Args:
-        code: Raw JavaScript source.
+        code (str): Raw JavaScript source.
 
     Returns:
         Dict[str, Any]: AST summary or {"error": "..."}.
     """
+    # Find node executable
     node = _node_bin()
     if not node:
         return {"error": "Node.js not found in PATH."}
 
+    # Create temporary source file
     with tempfile.NamedTemporaryFile("w+", suffix=".js", delete=False, encoding="utf-8") as src_f:
         src_f.write(code)
         src_f.flush()
         src_path = src_f.name
 
+    # Create temporary tool script file
     with tempfile.NamedTemporaryFile("w+", suffix=".js", delete=False, encoding="utf-8") as tool_f:
         tool_f.write(_NODE_SCRIPT)
         tool_f.flush()
         tool_path = tool_f.name
 
     try:
+        # Execute Node script to extract AST
         out = subprocess.check_output([node, tool_path, src_path], stderr=subprocess.STDOUT, text=True)
         return json.loads(out)
     except subprocess.CalledProcessError as e:
         return {"error": f"Node execution failed: {e.output.strip()}"}
     except Exception as e:  # noqa: BLE001
         return {"error": str(e)}
+
+
